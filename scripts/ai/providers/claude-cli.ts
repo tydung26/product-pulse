@@ -1,7 +1,4 @@
-import { execSync } from "child_process"
-import { writeFileSync, unlinkSync } from "fs"
-import { tmpdir } from "os"
-import { join } from "path"
+import { spawnSync } from "child_process"
 import { buildPrompt } from "../prompt"
 import { parseAndValidate } from "../parse-ai-response"
 import type { AIProvider, AnalysisInput, OpportunityResult } from "./types"
@@ -10,28 +7,28 @@ export class ClaudeCLIProvider implements AIProvider {
   async analyze(input: AnalysisInput): Promise<OpportunityResult[]> {
     const prompt = buildPrompt(input)
 
-    // Write prompt to temp file to avoid shell escaping issues
-    const tmpFile = join(tmpdir(), `productpulse-prompt-${Date.now()}.txt`)
-    writeFileSync(tmpFile, prompt, "utf-8")
+    // Pipe prompt via stdin — no shell, no temp files, no injection surface
+    const result = spawnSync("claude", ["--print"], {
+      input: prompt,
+      encoding: "utf-8",
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 120_000,
+    })
 
-    try {
-      const result = execSync(`cat "${tmpFile}" | claude --print`, {
-        encoding: "utf-8",
-        maxBuffer: 10 * 1024 * 1024,
-        timeout: 120_000,
-      })
-
-      return parseAndValidate(result)
-    } catch (err: unknown) {
-      const message = (err as Error).message
-      if (message.includes("command not found") || message.includes("ENOENT")) {
+    if (result.error) {
+      const message = result.error.message
+      if (message.includes("ENOENT")) {
         throw new Error(
           "Claude CLI not found. Install it or use --api flag with ANTHROPIC_API_KEY."
         )
       }
-      throw err
-    } finally {
-      try { unlinkSync(tmpFile) } catch { /* ignore cleanup errors */ }
+      throw result.error
     }
+
+    if (result.status !== 0) {
+      throw new Error(`Claude CLI exited with code ${result.status}: ${result.stderr}`)
+    }
+
+    return parseAndValidate(result.stdout)
   }
 }
