@@ -6,9 +6,10 @@ function extractJson(raw: string): string {
   const fenceMatch = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
   if (fenceMatch) return fenceMatch[1].trim()
 
-  // Try to find raw JSON array
-  const arrayMatch = raw.match(/\[[\s\S]*\]/)
-  if (arrayMatch) return arrayMatch[0]
+  // Find JSON array — match from first [ to last ] using balanced bracket search
+  const start = raw.indexOf("[")
+  const end = raw.lastIndexOf("]")
+  if (start !== -1 && end > start) return raw.slice(start, end + 1)
 
   throw new Error("No JSON array found in AI response")
 }

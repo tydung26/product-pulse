@@ -22,8 +22,11 @@ export class AnthropicSDKProvider implements AIProvider {
       messages: [{ role: "user", content: prompt }],
     })
 
-    const text =
-      response.content[0].type === "text" ? response.content[0].text : ""
+    // Concatenate all text blocks (model may return multiple content blocks)
+    const text = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
 
     return parseAndValidate(text)
   }

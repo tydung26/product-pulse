@@ -161,6 +161,26 @@ async function markReviewsProcessed(reviewIds: string[]): Promise<void> {
   if (error) logger.warn(`Failed to mark reviews processed: ${error.message}`)
 }
 
+// -- Retry wrapper for transient AI failures --
+
+async function analyzeWithRetry(
+  provider: AIProvider,
+  input: AnalysisInput,
+  maxRetries = 2
+): Promise<OpportunityResult[]> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await provider.analyze(input)
+    } catch (err: unknown) {
+      if (attempt === maxRetries) throw err
+      const delay = 1000 * Math.pow(2, attempt) // 1s, 2s backoff
+      logger.warn(`AI call failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms: ${(err as Error).message}`)
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+  return [] // unreachable but satisfies TS
+}
+
 // -- Main --
 
 async function main() {
@@ -212,7 +232,7 @@ async function main() {
       )
 
       const input = buildInput(batchApps, startups, batchReviews)
-      const results = await provider.analyze(input)
+      const results = await analyzeWithRetry(provider, input)
 
       logger.info(`AI returned ${results.length} opportunities`)
 
