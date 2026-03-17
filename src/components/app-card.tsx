@@ -1,31 +1,16 @@
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { SafeImage } from "@/components/safe-image"
+import { StarRating } from "@/components/star-rating"
 import type { App } from "@/lib/types/database"
-
-function StarRating({ rating }: { rating: number | null }) {
-  if (rating === null) return <span className="text-xs text-muted-foreground">No rating</span>
-  return (
-    <span className="text-sm font-medium">
-      {"★".repeat(Math.round(rating))}
-      {"☆".repeat(5 - Math.round(rating))}
-      <span className="ml-1 text-muted-foreground">{rating.toFixed(1)}</span>
-    </span>
-  )
-}
 
 export function AppCard({ app }: { app: App }) {
   return (
     <Link href={`/apps/${app.id}`}>
       <Card className="transition-colors hover:bg-muted/50">
         <CardContent className="flex gap-3 p-4">
-          {app.icon_url && (
-            <img
-              src={app.icon_url}
-              alt={app.name}
-              className="h-12 w-12 rounded-lg"
-            />
-          )}
+          <SafeImage src={app.icon_url} alt={app.name} size={48} />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <h3 className="truncate text-sm font-medium">{app.name}</h3>

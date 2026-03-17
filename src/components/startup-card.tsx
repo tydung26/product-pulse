@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { SafeImage } from "@/components/safe-image"
 import type { Startup } from "@/lib/types/database"
 
 const sourceLabel: Record<string, string> = {
@@ -14,13 +15,7 @@ export function StartupCard({ startup }: { startup: Startup }) {
     <Link href={`/startups/${startup.id}`}>
       <Card className="transition-colors hover:bg-muted/50">
         <CardContent className="flex gap-3 p-4">
-          {startup.logo_url && (
-            <img
-              src={startup.logo_url}
-              alt={startup.name}
-              className="h-12 w-12 rounded-lg object-cover"
-            />
-          )}
+          <SafeImage src={startup.logo_url} alt={startup.name} size={48} className="object-cover" />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <h3 className="truncate text-sm font-medium">{startup.name}</h3>

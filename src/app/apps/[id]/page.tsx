@@ -4,23 +4,19 @@ import { createSupabaseServer } from "@/lib/supabase/server"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import { SafeImage } from "@/components/safe-image"
+import { StarRating } from "@/components/star-rating"
+import { verdictColor } from "@/lib/constants"
 import type { App, StoreReview, Opportunity } from "@/lib/types/database"
 
 type Props = {
   params: Promise<{ id: string }>
 }
 
-const verdictColor: Record<string, string> = {
-  strong: "bg-green-100 text-green-800",
-  moderate: "bg-yellow-100 text-yellow-800",
-  weak: "bg-red-100 text-red-800",
-}
-
 export default async function AppDetailPage({ params }: Props) {
   const { id } = await params
   const supabase = await createSupabaseServer()
 
-  // Fetch app
   const { data: app } = await supabase
     .from("apps")
     .select("*")
@@ -30,7 +26,6 @@ export default async function AppDetailPage({ params }: Props) {
   if (!app) notFound()
   const typedApp = app as App
 
-  // Fetch reviews
   const { data: reviews } = await supabase
     .from("store_reviews")
     .select("*")
@@ -40,7 +35,6 @@ export default async function AppDetailPage({ params }: Props) {
 
   const typedReviews = (reviews ?? []) as StoreReview[]
 
-  // Fetch linked opportunities
   const { data: oppLinks } = await supabase
     .from("opportunity_apps")
     .select("opportunity_id, ai_comment")
@@ -63,11 +57,8 @@ export default async function AppDetailPage({ params }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* App header */}
       <div className="flex gap-4">
-        {typedApp.icon_url && (
-          <img src={typedApp.icon_url} alt={typedApp.name} className="h-16 w-16 rounded-xl" />
-        )}
+        <SafeImage src={typedApp.icon_url} alt={typedApp.name} size={64} className="rounded-xl" />
         <div>
           <h1 className="text-2xl font-semibold">{typedApp.name}</h1>
           <div className="mt-1 flex items-center gap-2">
@@ -78,9 +69,7 @@ export default async function AppDetailPage({ params }: Props) {
             <span className="text-sm text-muted-foreground">{typedApp.price ?? "Free"}</span>
           </div>
           <div className="mt-1 flex items-center gap-4 text-sm text-muted-foreground">
-            {typedApp.avg_rating !== null && (
-              <span>{"★".repeat(Math.round(typedApp.avg_rating))} {typedApp.avg_rating.toFixed(1)}</span>
-            )}
+            <StarRating rating={typedApp.avg_rating} />
             {typedApp.downloads !== null && (
               <span>{typedApp.downloads.toLocaleString()} downloads</span>
             )}
@@ -97,7 +86,6 @@ export default async function AppDetailPage({ params }: Props) {
 
       <Separator />
 
-      {/* Reviews */}
       <section>
         <h2 className="mb-3 text-lg font-medium">Reviews ({typedReviews.length})</h2>
         {typedReviews.length === 0 ? (
@@ -108,12 +96,8 @@ export default async function AppDetailPage({ params }: Props) {
               <Card key={review.id}>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      {"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}
-                    </span>
-                    {review.title && (
-                      <span className="text-sm font-medium">{review.title}</span>
-                    )}
+                    <StarRating rating={review.rating} />
+                    {review.title && <span className="text-sm font-medium">{review.title}</span>}
                     <span className="text-xs text-muted-foreground">{review.author}</span>
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">{review.body}</p>
@@ -126,7 +110,6 @@ export default async function AppDetailPage({ params }: Props) {
 
       <Separator />
 
-      {/* Linked Opportunities */}
       <section>
         <h2 className="mb-3 text-lg font-medium">Opportunities ({typedOpps.length})</h2>
         {typedOpps.length === 0 ? (
@@ -138,24 +121,18 @@ export default async function AppDetailPage({ params }: Props) {
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">
-                      <Link href="/opportunities" className="hover:underline">
-                        {opp.title}
-                      </Link>
+                      <Link href="/opportunities" className="hover:underline">{opp.title}</Link>
                     </CardTitle>
                     <div className="flex items-center gap-2">
                       <span className="text-lg font-bold">{opp.score}</span>
-                      <Badge className={verdictColor[opp.verdict] ?? ""}>
-                        {opp.verdict}
-                      </Badge>
+                      <Badge className={verdictColor[opp.verdict] ?? ""}>{opp.verdict}</Badge>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <p className="text-sm text-muted-foreground">{opp.description}</p>
                   {opp.ai_comment && (
-                    <p className="mt-2 text-sm italic text-muted-foreground">
-                      AI: {opp.ai_comment}
-                    </p>
+                    <p className="mt-2 text-sm italic text-muted-foreground">AI: {opp.ai_comment}</p>
                   )}
                 </CardContent>
               </Card>

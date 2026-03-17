@@ -4,6 +4,8 @@ import { createSupabaseServer } from "@/lib/supabase/server"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import { SafeImage } from "@/components/safe-image"
+import { verdictColor } from "@/lib/constants"
 import type { Startup, StartupComment, Opportunity } from "@/lib/types/database"
 
 type Props = {
@@ -14,12 +16,6 @@ const sourceLabel: Record<string, string> = {
   yc: "YC Launches",
   producthunt: "Product Hunt",
   unikorn: "Unikorn",
-}
-
-const verdictColor: Record<string, string> = {
-  strong: "bg-green-100 text-green-800",
-  moderate: "bg-yellow-100 text-yellow-800",
-  weak: "bg-red-100 text-red-800",
 }
 
 export default async function StartupDetailPage({ params }: Props) {
@@ -69,9 +65,7 @@ export default async function StartupDetailPage({ params }: Props) {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex gap-4">
-        {typed.logo_url && (
-          <img src={typed.logo_url} alt={typed.name} className="h-16 w-16 rounded-xl object-cover" />
-        )}
+        <SafeImage src={typed.logo_url} alt={typed.name} size={64} className="rounded-xl object-cover" />
         <div>
           <h1 className="text-2xl font-semibold">{typed.name}</h1>
           <div className="mt-1 flex items-center gap-2">
