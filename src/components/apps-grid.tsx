@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback } from "react"
+import { useDebouncedCallback } from "@/lib/use-debounce"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -62,7 +63,7 @@ export function AppsGrid({ apps, categories }: Props) {
         <Input
           placeholder="Search apps..."
           defaultValue={search}
-          onChange={(e) => updateParam("search", e.target.value)}
+          onChange={useDebouncedCallback((e: unknown) => updateParam("search", (e as React.ChangeEvent<HTMLInputElement>).target.value), 300)}
           className="sm:max-w-xs"
         />
         <Select value={category} onValueChange={(v) => updateParam("category", v ?? "all")}>

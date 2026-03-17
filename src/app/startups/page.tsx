@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 import { createSupabaseServer } from "@/lib/supabase/server"
 import { StartupsGrid } from "@/components/startups-grid"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { Startup } from "@/lib/types/database"
 
 export default async function StartupsPage() {
@@ -13,7 +14,7 @@ export default async function StartupsPage() {
     .limit(100)
 
   return (
-    <Suspense>
+    <Suspense fallback={<Skeleton className="h-96 w-full rounded-lg" />}>
       <StartupsGrid startups={(startups ?? []) as Startup[]} />
     </Suspense>
   )

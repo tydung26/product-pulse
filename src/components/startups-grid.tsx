@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import { useCallback } from "react"
+import { useDebouncedCallback } from "@/lib/use-debounce"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -68,7 +69,7 @@ export function StartupsGrid({ startups }: Props) {
         <Input
           placeholder="Search startups..."
           defaultValue={search}
-          onChange={(e) => updateParam("search", e.target.value)}
+          onChange={useDebouncedCallback((e: unknown) => updateParam("search", (e as React.ChangeEvent<HTMLInputElement>).target.value), 300)}
           className="sm:max-w-xs"
         />
         <Select value={source} onValueChange={(v) => updateParam("source", v ?? "all")}>
