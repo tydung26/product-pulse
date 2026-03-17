@@ -106,16 +106,16 @@ export async function upsertStartup(data: StartupInsert): Promise<Startup> {
 }
 
 export async function upsertStartupComment(data: StartupCommentInsert): Promise<void> {
-  // Check existence by startup_id + author + body substring to avoid duplicates
+  // Dedup by startup_id + author + body prefix (first 100 chars)
+  const bodyPrefix = data.body.slice(0, 100)
   const { data: existing } = await supabaseAdmin
     .from("startup_comments")
     .select("id")
     .eq("startup_id", data.startup_id)
     .eq("author", data.author ?? "")
+    .like("body", `${bodyPrefix}%`)
     .limit(1)
 
-  // Simple dedup: skip if same author already has a comment for this startup
-  // (imperfect but sufficient for MVP — full dedup would need external_id)
   if (existing && existing.length > 0) return
 
   const { error } = await supabaseAdmin
@@ -128,6 +128,11 @@ export async function upsertStartupComment(data: StartupCommentInsert): Promise<
 // -- Review Upsert --
 
 export async function upsertReview(data: StoreReviewInsert): Promise<StoreReview | null> {
+  // external_id is required for dedup via unique constraint — generate fallback if missing
+  if (!data.external_id) {
+    data.external_id = `${data.app_id}-${data.author ?? "anon"}-${data.body.slice(0, 50).replace(/\W/g, "")}`
+  }
+
   const { data: review, error } = await supabaseAdmin
     .from("store_reviews")
     .upsert(data, { onConflict: "source,external_id" })
@@ -148,6 +153,7 @@ export async function updateAppLastCrawled(appId: string): Promise<void> {
 }
 
 export async function getActiveApps(): Promise<App[]> {
+  // ISO 8601 string interpolation is idiomatic for Supabase PostgREST timestamptz filters
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
   const { data, error } = await supabaseAdmin

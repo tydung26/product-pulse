@@ -85,7 +85,8 @@ function mapToAppInsert(entry: RSSFeedEntry, lookup: ITunesLookupResult | null):
     description: lookup?.description ?? null,
     avg_rating: lookup?.averageUserRating ?? null,
     overall_rating: lookup?.averageUserRating ?? null,
-    downloads: lookup ? lookup.userRatingCount * 5 : null, // rough estimate
+    // Heuristic: ~1 in 5 users leave ratings. Apple doesn't expose download counts.
+    downloads: lookup ? lookup.userRatingCount * 5 : null,
     estimated_mrr: null,
   }
 }
@@ -97,7 +98,6 @@ async function main() {
   try {
     let found = 0
     let inserted = 0
-    let updated = 0
     const seenBundleIds = new Set<string>()
 
     for (const genre of TARGET_GENRES) {
@@ -128,8 +128,7 @@ async function main() {
       }
     }
 
-    updated = 0 // upsert doesn't distinguish, count all as inserted
-    await completeCrawlJob(jobId, { found, inserted, updated })
+    await completeCrawlJob(jobId, { found, inserted, updated: 0 })
     logger.info(`Done. Found: ${found}, Upserted: ${inserted}`)
   } catch (err) {
     await failCrawlJob(jobId, (err as Error).message)
