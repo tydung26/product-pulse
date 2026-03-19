@@ -56,6 +56,7 @@ function validateItem(item: Record<string, unknown>, index: number): Opportunity
     appIndices: Array.isArray(item.appIndices) ? item.appIndices : [],
     startupIndices: Array.isArray(item.startupIndices) ? item.startupIndices : [],
     reviewIndices: Array.isArray(item.reviewIndices) ? item.reviewIndices : [],
+    commentIndices: Array.isArray(item.commentIndices) ? item.commentIndices : [],
     appComments: (item.appComments as Record<number, string>) ?? {},
     startupComments:
       (item.startupComments as Record<number, { comment: string; role: string }>) ?? {},
