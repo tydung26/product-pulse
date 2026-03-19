@@ -14,6 +14,7 @@
     "crawl:ph": "tsx scripts/crawlers/crawl-product-hunt.ts",
     "crawl:unikorn": "tsx scripts/crawlers/crawl-unikorn.ts",
     "crawl:store_reviews": "tsx scripts/crawlers/crawl-store-reviews.ts",
+    "summarize": "tsx scripts/ai/summarize-app-reviews.ts",
     "analyze": "tsx scripts/ai/analyze.ts"
   },
   "dependencies": {
