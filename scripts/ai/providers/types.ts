@@ -1,9 +1,32 @@
 // AI provider interface and analysis types
 
+export type PainTheme = {
+  theme: string
+  severity: number
+  review_count: number
+  example_quotes: string[]
+}
+
+export type AppSummaryContext = {
+  index: number
+  id: string
+  name: string
+  category: string | null
+  mrr: number | null
+  downloads: number | null
+  rating: number | null
+  store: string
+  themes: PainTheme[]
+  total_reviews: number
+}
+
 export type AnalysisInput = {
   apps: AppContext[]
   startups: StartupContext[]
   reviews: ReviewContext[]
+  startupComments: StartupCommentContext[]
+  // Step 2: app pain summaries (replaces raw reviews when present)
+  appSummaries?: AppSummaryContext[]
 }
 
 export type AppContext = {
@@ -35,6 +58,14 @@ export type ReviewContext = {
   title: string | null
 }
 
+export type StartupCommentContext = {
+  index: number
+  id: string
+  startupIndex: number
+  body: string
+  author: string | null
+}
+
 export type OpportunityResult = {
   title: string
   description: string
@@ -50,6 +81,7 @@ export type OpportunityResult = {
   appIndices: number[]
   startupIndices: number[]
   reviewIndices: number[]
+  commentIndices: number[]
   appComments: Record<number, string>
   startupComments: Record<number, { comment: string; role: string }>
 }
