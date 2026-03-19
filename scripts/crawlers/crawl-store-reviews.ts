@@ -30,9 +30,20 @@ type AppleReviewEntry = {
   link?: { attributes: { href: string } }
 }
 
+function extractItunesId(storeUrl: string | null): string | null {
+  if (!storeUrl) return null
+  const match = storeUrl.match(/\/id(\d+)/)
+  return match?.[1] ?? null
+}
+
 async function fetchAppStoreReviews(app: App): Promise<StoreReviewInsert[]> {
-  // Apple RSS feed returns recent reviews (up to ~50 per page)
-  const url = `https://itunes.apple.com/us/rss/customerreviews/id=${app.store_id}/sortBy=mostRecent/json`
+  // RSS review URL needs the numeric iTunes ID, not the bundle ID
+  const itunesId = extractItunesId(app.store_url)
+  if (!itunesId) {
+    logger.warn(`No iTunes ID found in store_url for ${app.name}`)
+    return []
+  }
+  const url = `https://itunes.apple.com/us/rss/customerreviews/id=${itunesId}/sortBy=mostRecent/json`
 
   try {
     const data = await fetchJson<{ feed: { entry?: AppleReviewEntry[] } }>(url)
@@ -120,9 +131,9 @@ async function main() {
   let totalInserted = 0
 
   for (const app of apps) {
-    const jobId = await startCrawlJob(app.store as "app_store" | "google_play", app.id)
-
     try {
+      const jobId = await startCrawlJob(app.store as "app_store" | "google_play", app.id)
+
       const reviews =
         app.store === "app_store"
           ? await fetchAppStoreReviews(app)
@@ -134,7 +145,7 @@ async function main() {
           const result = await upsertReview(review)
           if (result) inserted++
         } catch (err: unknown) {
-          logger.warn(`Failed to upsert review: ${(err as Error).message}`)
+          // Skip individual review failures silently
         }
       }
 
@@ -147,7 +158,6 @@ async function main() {
 
       logger.info(`${app.name}: ${reviews.length} reviews found, ${inserted} upserted`)
     } catch (err: unknown) {
-      await failCrawlJob(jobId, (err as Error).message)
       logger.warn(`Failed for ${app.name}: ${(err as Error).message}`)
     }
 
