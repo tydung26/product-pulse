@@ -124,6 +124,14 @@ export type OpportunityReview = {
   review_id: string
 }
 
+export type AppPainSummary = {
+  id: string
+  app_id: string
+  themes: { theme: string; severity: number; review_count: number; example_quotes: string[] }[]
+  total_reviews: number
+  created_at: string
+}
+
 export type CrawlJob = {
   id: string
   job_type: "app_store" | "google_play" | "yc" | "product_hunt" | "unikorn" | "analyze"
