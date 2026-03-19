@@ -12,28 +12,45 @@ import type { AppInsert } from "@/lib/types/database"
 const logger = createLogger("app-store")
 const delay = rateLimit(500)
 
-// Target genre IDs for Apple App Store RSS feeds
+// All App Store app genre IDs (excluding Games, Stickers, Magazines)
 // https://affiliate.itunes.apple.com/resources/documentation/genre-mapping/
 const TARGET_GENRES = [
-  { id: 6007, name: "Productivity" },
-  { id: 6013, name: "Health & Fitness" },
-  { id: 6015, name: "Finance" },
-  { id: 6017, name: "Education" },
+  { id: 6018, name: "Books" },
   { id: 6000, name: "Business" },
+  { id: 6026, name: "Developer Tools" },
+  { id: 6017, name: "Education" },
+  { id: 6016, name: "Entertainment" },
+  { id: 6015, name: "Finance" },
+  { id: 6023, name: "Food & Drink" },
+  { id: 6027, name: "Graphics & Design" },
+  { id: 6013, name: "Health & Fitness" },
+  { id: 6012, name: "Lifestyle" },
+  { id: 6020, name: "Medical" },
+  { id: 6011, name: "Music" },
+  { id: 6010, name: "Navigation" },
+  { id: 6009, name: "News" },
+  { id: 6008, name: "Photo & Video" },
+  { id: 6007, name: "Productivity" },
+  { id: 6006, name: "Reference" },
+  { id: 6024, name: "Shopping" },
+  { id: 6005, name: "Social Networking" },
+  { id: 6004, name: "Sports" },
+  { id: 6003, name: "Travel" },
+  { id: 6002, name: "Utilities" },
+  { id: 6001, name: "Weather" },
 ]
 
 const COUNTRY = "us"
-const LIMIT = 50
+const LIMIT = 48
 
-// Apple RSS feed types
+// Apple RSS feed types — bundleId is nested under id.attributes
 type RSSFeedEntry = {
-  "im:bundleId": { attributes: { "im:bundleId": string } }
   "im:name": { label: string }
   category: { attributes: { label: string } }
   "im:price": { attributes: { amount: string } }
   "im:image": { label: string }[]
   link: { attributes: { href: string } }
-  id: { attributes: { "im:id": string } }
+  id: { attributes: { "im:id": string; "im:bundleId": string } }
 }
 
 type ITunesLookupResult = {
@@ -70,7 +87,7 @@ async function lookupApp(appId: string): Promise<ITunesLookupResult | null> {
 }
 
 function mapToAppInsert(entry: RSSFeedEntry, lookup: ITunesLookupResult | null): AppInsert {
-  const bundleId = entry["im:bundleId"].attributes["im:bundleId"]
+  const bundleId = entry.id.attributes["im:bundleId"]
   const images = entry["im:image"]
   const iconUrl = images.length > 0 ? images[images.length - 1].label : null
 
@@ -106,24 +123,30 @@ async function main() {
       logger.info(`Found ${entries.length} apps in ${genre.name}`)
 
       for (const entry of entries) {
-        const bundleId = entry["im:bundleId"].attributes["im:bundleId"]
-
-        // Skip duplicates across genres
-        if (seenBundleIds.has(bundleId)) continue
-        seenBundleIds.add(bundleId)
-
-        found++
-        await delay()
-
-        const appId = entry.id.attributes["im:id"]
-        const lookup = await lookupApp(appId)
-        const appData = mapToAppInsert(entry, lookup)
-
         try {
+          const bundleId = entry.id?.attributes?.["im:bundleId"]
+          if (!bundleId) {
+            logger.warn(`Skipping entry with missing bundleId`)
+            continue
+          }
+
+          // Skip duplicates across genres
+          if (seenBundleIds.has(bundleId)) continue
+          seenBundleIds.add(bundleId)
+
+          found++
+          await delay()
+
+          const appId = entry.id?.attributes?.["im:id"]
+          if (!appId) continue
+
+          const lookup = await lookupApp(appId)
+          const appData = mapToAppInsert(entry, lookup)
+
           await upsertApp(appData)
           inserted++ // upsert — counts as inserted or updated
         } catch (err) {
-          logger.warn(`Failed to upsert ${appData.name}: ${(err as Error).message}`)
+          logger.warn(`Failed to process entry: ${(err as Error).message}`)
         }
       }
     }
