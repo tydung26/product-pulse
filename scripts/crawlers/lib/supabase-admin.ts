@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js"
-import "dotenv/config"
+import dotenv from "dotenv"
+dotenv.config({ path: ".env" })
 
 // Admin client for CLI scripts — uses service_role_key to bypass RLS
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL

@@ -156,14 +156,26 @@ export async function getActiveApps(): Promise<App[]> {
   // ISO 8601 string interpolation is idiomatic for Supabase PostgREST timestamptz filters
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-  const { data, error } = await supabaseAdmin
-    .from("apps")
-    .select("*")
-    .eq("is_active", true)
-    .or(`last_crawled_at.is.null,last_crawled_at.lt.${oneDayAgo}`)
+  // Paginate to bypass Supabase's default 1000-row limit
+  const PAGE_SIZE = 1000
+  const allApps: App[] = []
+  let offset = 0
 
-  if (error) throw new Error(`Failed to fetch active apps: ${error.message}`)
-  return (data ?? []) as App[]
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from("apps")
+      .select("*")
+      .eq("is_active", true)
+      .or(`last_crawled_at.is.null,last_crawled_at.lt.${oneDayAgo}`)
+      .range(offset, offset + PAGE_SIZE - 1)
+
+    if (error) throw new Error(`Failed to fetch active apps: ${error.message}`)
+    allApps.push(...(data as App[]))
+    if (data.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+
+  return allApps
 }
 
 // -- HTML Fetching --
