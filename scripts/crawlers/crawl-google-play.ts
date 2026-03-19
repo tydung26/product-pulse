@@ -13,16 +13,41 @@ import type { AppInsert } from "@/lib/types/database"
 const logger = createLogger("google-play")
 const delay = rateLimit(500)
 
-// Target categories for Google Play (string constants from the library)
+// All Google Play app categories (excluding games, wear, watch faces)
 const TARGET_CATEGORIES: string[] = [
-  "PRODUCTIVITY",
-  "HEALTH_AND_FITNESS",
-  "FINANCE",
-  "EDUCATION",
+  "ART_AND_DESIGN",
+  "AUTO_AND_VEHICLES",
+  "BEAUTY",
+  "BOOKS_AND_REFERENCE",
   "BUSINESS",
+  "COMMUNICATION",
+  "DATING",
+  "EDUCATION",
+  "ENTERTAINMENT",
+  "EVENTS",
+  "FINANCE",
+  "FOOD_AND_DRINK",
+  "HEALTH_AND_FITNESS",
+  "HOUSE_AND_HOME",
+  "LIFESTYLE",
+  "MAPS_AND_NAVIGATION",
+  "MEDICAL",
+  "MUSIC_AND_AUDIO",
+  "NEWS_AND_MAGAZINES",
+  "PARENTING",
+  "PERSONALIZATION",
+  "PHOTOGRAPHY",
+  "PRODUCTIVITY",
+  "SHOPPING",
+  "SOCIAL",
+  "SPORTS",
+  "TOOLS",
+  "TRAVEL_AND_LOCAL",
+  "VIDEO_PLAYERS",
+  "WEATHER",
 ]
 
-const APPS_PER_CATEGORY = 50
+const APPS_PER_CATEGORY = 48
 
 type GPlayAppItem = {
   appId: string
