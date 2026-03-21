@@ -8,6 +8,7 @@ const tabs = [
   { label: "Apps", href: "/apps" },
   { label: "Startups", href: "/startups" },
   { label: "Opportunities", href: "/opportunities" },
+  { label: "Pain Summaries", href: "/pain-summaries" },
 ]
 
 export function NavTabs() {
