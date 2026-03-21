@@ -198,7 +198,7 @@ async function main() {
 
     let summarized = 0
     let failed = 0
-    let queued = 0
+    const queued = 0
 
     // Process a single app
     async function processApp(app: App): Promise<void> {
