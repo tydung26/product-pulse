@@ -107,6 +107,8 @@ async function main() {
         funding_stage: null,
         category: null,
         launched_at: null,
+        last_active_date: null,
+        status: "active",  // YC launches are recently active by definition
         metadata: { batch: null },
       }
 

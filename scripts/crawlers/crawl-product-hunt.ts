@@ -130,6 +130,8 @@ async function main() {
           funding_stage: null,
           category,
           launched_at: null,
+          last_active_date: null,
+          status: "active",  // PH featured products are active
           metadata: {},
         }
 
@@ -178,6 +180,7 @@ async function main() {
           funding_stage: null,
           category: null,
           launched_at: null,
+          last_active_date: null,
           metadata: {},
         }
 

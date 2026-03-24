@@ -60,12 +60,15 @@ export type Startup = {
   funding_stage: string | null
   category: string | null
   launched_at: string | null
+  last_active_date: string | null
+  status: "active" | "inactive" | "unknown"
   metadata: Record<string, unknown>
   created_at: string
   updated_at: string
 }
 
-export type StartupInsert = Omit<Startup, "id" | "created_at" | "updated_at" | "upvotes"> & {
+export type StartupInsert = Omit<Startup, "id" | "created_at" | "updated_at" | "upvotes" | "status"> & {
+  status?: "active" | "inactive" | "unknown"
   id?: string
   upvotes?: number
 }

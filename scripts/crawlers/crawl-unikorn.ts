@@ -110,6 +110,7 @@ async function main() {
         funding_stage: item.funding_stage,
         category: item.category,
         launched_at: null,
+        last_active_date: null,
         metadata: {},
       }
 
