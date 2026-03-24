@@ -146,7 +146,7 @@ async function saveOpportunity(result: OpportunityResult, input: AnalysisInput):
       verdict: result.verdict,
       pain_summary: result.painSummary,
       solution_angles: result.solutionAngles,
-      ai_reasoning: { reasoning: result.reasoning },
+      ai_reasoning: { reasoning: result.reasoning, critique: result.critique, openQuestions: result.openQuestions },
       evidence_summary: { evidence: result.evidence },
       wtp_count: result.wtpCount,
       source_count: result.sourceDistribution,

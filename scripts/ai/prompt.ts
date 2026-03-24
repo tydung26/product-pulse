@@ -51,7 +51,7 @@ export function buildPrompt(input: AnalysisInput): string {
   const communitySection = buildCommunitySummarySection(community)
   const startupSection = buildStartupSection(input)
 
-  return `You are a product analyst. Given aggregated pain themes from app reviews, community discussions, and startup context, identify viable product opportunities.
+  return `You are a brutally honest product analyst and devil's advocate. Given aggregated pain themes from app reviews, community discussions, and startup context, identify viable product opportunities. For EVERY opportunity, you MUST also provide honest critique — reasons it might fail, false signals, and open questions the builder should validate before committing.
 
 ## INPUT DATA
 
@@ -70,6 +70,8 @@ Analyze the pain themes across apps and community to identify product opportunit
 2. Score each dimension with reasoning explaining why
 3. Flag evidence items that contain willingness-to-pay (WTP) signals
 4. Link to specific apps and startups by their index numbers
+5. Play DEVIL'S ADVOCATE: list 2-4 reasons this opportunity might NOT work (market too small? complaints are just bugs that'll be fixed? users won't pay? competition moat too strong?)
+6. List 1-3 OPEN QUESTIONS that can't be answered from this data and need real-world validation
 
 ## OUTPUT FORMAT
 
@@ -98,6 +100,15 @@ Return a JSON array (no markdown fences, just raw JSON):
       "competition": { "score": 40, "reasoning": "2 startups attempting but both have poor reviews" },
       "wtp_bonus": 4
     },
+    "critique": [
+      "Most complaints are about bugs that the vendor will likely fix in next release",
+      "No evidence users would switch — high switching cost in this category",
+      "Market may be too small for sustainable SaaS revenue"
+    ],
+    "openQuestions": [
+      "Are users willing to pay $X/mo for a standalone solution or do they expect this built into existing tools?",
+      "Is this pain concentrated in a specific geography or global?"
+    ],
     "appComments": {"0": "47 reviews mention login failures", "2": "Low rating despite high downloads"},
     "startupComments": {"1": {"comment": "Attempting similar solution", "role": "competitor"}}
   }

@@ -124,6 +124,9 @@ function validateItem(item: Record<string, unknown>, index: number): Opportunity
     },
     wtpCount,
     sourceDistribution,
+    // Devil's advocate
+    critique: Array.isArray(item.critique) ? item.critique.map(String) : [],
+    openQuestions: Array.isArray(item.openQuestions) ? item.openQuestions.map(String) : [],
     // Legacy fields
     reviewIndices: Array.isArray(item.reviewIndices) ? item.reviewIndices : [],
     commentIndices: Array.isArray(item.commentIndices) ? item.commentIndices : [],

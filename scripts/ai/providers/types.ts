@@ -109,6 +109,9 @@ export type OpportunityResult = {
   scoreBreakdown: ScoreBreakdown | null
   wtpCount: number
   sourceDistribution: Record<string, number>
+  // Devil's advocate critique
+  critique: string[]        // reasons this opportunity might NOT work
+  openQuestions: string[]   // things to validate before building
   // Legacy fields (backward compat)
   reviewIndices: number[]
   commentIndices: number[]

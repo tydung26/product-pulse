@@ -142,6 +142,47 @@ export default async function OpportunityDetailPage({ params }: Props) {
         </div>
       )}
 
+      {/* Devil's advocate: critique + open questions */}
+      {(() => {
+        const aiReasoning = opp.ai_reasoning as Record<string, unknown> | null
+        const critique = (aiReasoning?.critique ?? []) as string[]
+        const openQuestions = (aiReasoning?.openQuestions ?? []) as string[]
+        if (critique.length === 0 && openQuestions.length === 0) return null
+        return (
+          <>
+            <Separator />
+            <div className="grid gap-4 sm:grid-cols-2">
+              {critique.length > 0 && (
+                <div>
+                  <h2 className="mb-2 text-sm font-semibold text-red-700">Why This Might NOT Work</h2>
+                  <ul className="space-y-1">
+                    {critique.map((c, i) => (
+                      <li key={i} className="flex gap-2 text-sm text-muted-foreground">
+                        <span className="mt-0.5 shrink-0 text-red-400">!</span>
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {openQuestions.length > 0 && (
+                <div>
+                  <h2 className="mb-2 text-sm font-semibold text-amber-700">Open Questions to Validate</h2>
+                  <ul className="space-y-1">
+                    {openQuestions.map((q, i) => (
+                      <li key={i} className="flex gap-2 text-sm text-muted-foreground">
+                        <span className="mt-0.5 shrink-0 text-amber-400">?</span>
+                        {q}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </>
+        )
+      })()}
+
       <Separator />
 
       {/* Evidence / Competition / WTP tabs */}
