@@ -24,25 +24,60 @@ No test runner is configured.
 
 ## Architecture
 
-ProductPulse is a local-first MVP that crawls app stores and startup directories, fetches negative reviews, and uses Claude AI to identify product opportunities.
+ProductPulse is a local-first research tool that crawls app stores, startup directories, and community sources, then uses Claude AI to identify product opportunities with full evidence traceability.
 
-### 3-Step Pipeline
+### 4-Step Pipeline
 
-1. **Crawl apps/startups** → `scripts/crawlers/crawl-*.ts` → insert into `apps`, `startups` tables
-2. **Crawl reviews** → `scripts/crawlers/crawl-store-reviews.ts` → insert into `store_reviews` (1-3 stars only)
-3. **AI analysis** → `scripts/ai/analyze.ts` → batch reviews, call Claude, insert into `opportunities` + 3 junction tables
+```
+STEP 1: CRAWL DATA
+  App Stores (App Store, Google Play) → apps, store_reviews (1-3 stars)
+  Startup Dirs (YC, PH, Unikorn) → startups
+  Community (Reddit, HN, Indie Hackers) → community_posts (unified table)
+    + startup_comments migrated into community_posts
+    + WTP keyword scan at crawl time (has_wtp flag)
+
+STEP 2: SUMMARIZE
+  Track A: summarize-app-reviews → app_pain_summaries (per app)
+    - 100 reviews max, ordered 1★ first
+    - 3-5 pain themes, 4 apps concurrent
+    - Invalidated when new reviews arrive
+  Track B: summarize-community → community_pain_summaries (per source+topic)
+    - AI groups posts by topic clusters
+    - Extracts themes + flags WTP signals
+
+STEP 3: ANALYZE (with traceability)
+  Pass 1: Per-Category (3-4 concurrent, incremental — only changed categories)
+    Input: app_pain_summaries + community_pain_summaries + startups (filtered)
+    Output: 1-5 opportunities with evidence chains:
+      - Specific review quotes + IDs
+      - Specific community post quotes + IDs
+      - Per-dimension score reasoning
+  Pass 2: Cross-Category (single call)
+    → Platform-level opportunities (pain across 3+ categories)
+  Scoring: pain×0.4 + market×0.35 + inv_competition×0.25 + WTP bonus
+  Dedup: hash(title+category) before insert
+
+STEP 4: BROWSE (Frontend)
+  /opportunities       — Ranked list, cross-source badges, WTP count
+  /opportunities/[id]  — Research dossier: score breakdown, evidence tab
+                          (quotes + original links), competition tab, WTP highlights
+  /community           — Posts filtered by source, channel, WTP, score
+  /community/[id]      — Full post + metadata + original link
+  /apps, /startups, /pain-summaries — Existing pages
+```
 
 ### Frontend (Next.js App Router + RSC)
 
 - `src/app/` — Pages use React Server Components; fetch directly from Supabase
 - `src/app/apps/` — App listing + detail with linked reviews and opportunities
 - `src/app/startups/` — Startup listing + detail with comments
-- `src/app/opportunities/` — AI-scored opportunities ranked by viability
+- `src/app/opportunities/` — AI-scored opportunities as research dossiers with evidence chains
+- `src/app/community/` — Community posts listing + detail with WTP indicators
 - No API routes — all data fetching is server-side via Supabase client
 
 ### Backend (Supabase PostgreSQL)
 
-9 tables: `apps`, `store_reviews`, `startups`, `startup_comments`, `opportunities`, `opportunity_apps`, `opportunity_startups`, `opportunity_reviews`, `crawl_jobs`. Schema in `supabase/migrations/001-initial-schema.sql`.
+Tables: `apps`, `store_reviews`, `app_pain_summaries`, `startups`, `startup_comments` (legacy, migrated to community_posts), `community_posts`, `community_pain_summaries`, `opportunities`, `opportunity_apps`, `opportunity_startups`, `opportunity_reviews`, `opportunity_community_posts`, `crawl_jobs`. Schema in `supabase/migrations/`.
 
 Three Supabase clients:
 - `src/lib/supabase/server.ts` — SSR-safe (cookie-based), used by RSC pages
@@ -51,17 +86,23 @@ Three Supabase clients:
 
 ### AI Pipeline (`scripts/ai/`)
 
-- `analyze.ts` — Main entry: batches unprocessed reviews (max 50), calls provider, saves results with retry+backoff
-- `prompt.ts` — Builds context prompt for Claude (product analyst role, pain/market/competition scoring)
-- `parse-ai-response.ts` — Extracts JSON array from response, validates fields, clamps scores (0-100), filters score >= 30
-- `providers/anthropic-sdk.ts` — Uses `@anthropic-ai/sdk` (requires `ANTHROPIC_API_KEY`)
-- `providers/claude-cli.ts` — Uses `claude --print` via spawnSync (no API key needed)
+- `analyze.ts` — Fetches app + community summaries, runs per-category + cross-category analysis, saves with evidence chains
+- `summarize-app-reviews.ts` — Per-app review summarization (1★ first), upserts pain themes
+- `summarize-community-posts.ts` — AI topic clustering for community posts, extracts themes + WTP
+- `prompt.ts` — Builds prompts with app themes, community themes, WTP signals, evidence citation requirements
+- `parse-ai-response.ts` — Validates evidence structure, extracts quotes, clamps scores
+- `providers/anthropic-sdk.ts` — Default provider (requires `ANTHROPIC_API_KEY`)
+- `providers/claude-cli.ts` — Fallback via `claude --print`
 
 ### Scoring Model
 
-`score = pain_severity × 0.4 + market_size × 0.35 + (100 - competition) × 0.25`
+`score = pain_severity × 0.4 + market_size × 0.35 + (100 - competition) × 0.25 + wtp_bonus`
 
 Verdicts: "strong" (≥70), "moderate" (40-69), "weak" (<40)
+
+### Traceability
+
+Every opportunity links to specific evidence via junction tables with quotes and relevance explanations. The `/opportunities/[id]` page renders a research dossier with clickable links to original sources (app store reviews, Reddit posts, HN threads, etc.).
 
 ## Key Conventions
 
@@ -78,3 +119,5 @@ Verdicts: "strong" (≥70), "moderate" (40-69), "weak" (<40)
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase anon key (client reads)
 - `SUPABASE_SERVICE_ROLE_KEY` — Service role key (CLI scripts only)
 - `ANTHROPIC_API_KEY` — Optional; if absent, AI pipeline falls back to Claude CLI
+- `REDDIT_CLIENT_ID` — Reddit OAuth app client ID (for community crawler)
+- `REDDIT_CLIENT_SECRET` — Reddit OAuth app client secret (for community crawler)
