@@ -96,6 +96,19 @@ function buildInputFromSummaries(
 // -- Save results to DB --
 
 async function saveOpportunity(result: OpportunityResult, input: AnalysisInput): Promise<void> {
+  // Dedup check: skip if opportunity with same title + category already exists
+  const { data: existing } = await supabaseAdmin
+    .from("opportunities")
+    .select("id")
+    .eq("title", result.title)
+    .eq("category", result.category)
+    .limit(1)
+
+  if (existing && existing.length > 0) {
+    logger.info(`Skipping duplicate: "${result.title}" [${result.category}]`)
+    return
+  }
+
   const { data: opp, error } = await supabaseAdmin
     .from("opportunities")
     .insert({
