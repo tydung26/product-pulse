@@ -18,6 +18,7 @@
     "crawl:reddit": "tsx scripts/crawlers/crawl-reddit.ts",
     "crawl:ih": "tsx scripts/crawlers/crawl-indie-hackers.ts",
     "summarize": "tsx scripts/ai/summarize-app-reviews.ts",
+    "summarize:community": "tsx scripts/ai/summarize-community-posts.ts",
     "analyze": "tsx scripts/ai/analyze.ts"
   },
   "dependencies": {
