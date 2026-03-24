@@ -1,5 +1,6 @@
 import "dotenv/config"
 import { spawn } from "child_process"
+import Anthropic from "@anthropic-ai/sdk"
 import { supabaseAdmin } from "../crawlers/lib/supabase-admin"
 import {
   createLogger,
@@ -16,16 +17,26 @@ const SOURCES = ["reddit", "hn", "indie_hackers"] as const
 // -- Data fetching --
 
 async function getUnprocessedPosts(source: string): Promise<CommunityPost[]> {
-  const { data, error } = await supabaseAdmin
-    .from("community_posts")
-    .select("*")
-    .eq("source", source)
-    .eq("is_processed", false)
-    .order("score", { ascending: false })
-    .limit(MAX_POSTS_PER_BATCH * 4) // max 4 batches per source per run
+  const PAGE_SIZE = 1000
+  const allPosts: CommunityPost[] = []
+  let offset = 0
 
-  if (error) throw new Error(`Failed to fetch community posts: ${error.message}`)
-  return (data ?? []) as CommunityPost[]
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from("community_posts")
+      .select("*")
+      .eq("source", source)
+      .eq("is_processed", false)
+      .order("score", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1)
+
+    if (error) throw new Error(`Failed to fetch community posts: ${error.message}`)
+    allPosts.push(...(data as CommunityPost[]))
+    if (data.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+
+  return allPosts
 }
 
 // -- Prompt --
@@ -138,6 +149,23 @@ function parseResponse(raw: string): SummarizationResult {
   return { clusters: parsed.clusters }
 }
 
+// -- AI call via Anthropic SDK --
+
+async function callAnthropicSDK(client: Anthropic, prompt: string): Promise<SummarizationResult> {
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 4096,
+    messages: [{ role: "user", content: prompt }],
+  })
+
+  const text = response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("\n")
+
+  return parseResponse(text)
+}
+
 // -- DB operations --
 
 async function upsertCluster(source: string, cluster: ClusterResult): Promise<void> {
@@ -179,7 +207,14 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 // -- Main --
 
 async function main() {
-  logger.info("Starting community post summarization")
+  const args = process.argv.slice(2)
+  const forceCli = args.includes("--cli")
+
+  // Auto-select provider: SDK when API key present, CLI as fallback
+  const useSDK = !forceCli && !!process.env.ANTHROPIC_API_KEY
+  const anthropic = useSDK ? new Anthropic() : null
+  logger.info(`Starting community post summarization (provider: ${useSDK ? "Anthropic SDK" : "Claude CLI"})`)
+
   const jobId = await startCrawlJob("community_summarize")
 
   try {
@@ -201,7 +236,9 @@ async function main() {
 
         try {
           const prompt = buildCommunityPrompt(source, batch)
-          const result = await callClaudeCLI(prompt)
+          const result = anthropic
+            ? await callAnthropicSDK(anthropic, prompt)
+            : await callClaudeCLI(prompt)
 
           for (const cluster of result.clusters) {
             try {
