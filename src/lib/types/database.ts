@@ -99,6 +99,10 @@ export type Opportunity = {
   pain_summary: string[]
   solution_angles: string[]
   ai_reasoning: Record<string, unknown>
+  evidence_summary: Record<string, unknown>
+  wtp_count: number
+  source_count: Record<string, number>
+  score_breakdown: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -125,6 +129,15 @@ export type OpportunityStartup = {
 export type OpportunityReview = {
   opportunity_id: string
   review_id: string
+  quote: string | null
+  relevance: string | null
+}
+
+export type OpportunityCommunityPost = {
+  opportunity_id: string
+  community_post_id: string
+  quote: string | null
+  relevance: string | null
 }
 
 export type AppPainSummary = {
@@ -135,9 +148,46 @@ export type AppPainSummary = {
   created_at: string
 }
 
+// -- Community types --
+
+export type CommunityPost = {
+  id: string
+  source: "reddit" | "hn" | "indie_hackers" | "producthunt" | "yc"
+  external_id: string
+  channel: string | null
+  title: string | null
+  body: string
+  author: string | null
+  url: string
+  score: number
+  comment_count: number
+  has_wtp: boolean
+  is_processed: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type CommunityPostInsert = Omit<CommunityPost, "id" | "created_at" | "updated_at" | "is_processed" | "score" | "comment_count" | "has_wtp"> & {
+  id?: string
+  is_processed?: boolean
+  score?: number
+  comment_count?: number
+  has_wtp?: boolean
+}
+
+export type CommunityPainSummary = {
+  id: string
+  source: string
+  topic: string
+  themes: { theme: string; severity: number; review_count: number; example_quotes: string[] }[]
+  total_posts: number
+  created_at: string
+  updated_at: string
+}
+
 export type CrawlJob = {
   id: string
-  job_type: "app_store" | "google_play" | "yc" | "product_hunt" | "unikorn" | "analyze"
+  job_type: "app_store" | "google_play" | "yc" | "product_hunt" | "unikorn" | "analyze" | "hn" | "reddit" | "indie_hackers" | "community_summarize"
   status: "pending" | "running" | "completed" | "failed"
   app_id: string | null
   items_found: number

@@ -8,6 +8,8 @@ import type {
   StoreReview,
   StoreReviewInsert,
   CrawlJob,
+  CommunityPost,
+  CommunityPostInsert,
 } from "@/lib/types/database"
 
 // -- Logging --
@@ -191,6 +193,32 @@ export async function fetchHtml(url: string): Promise<string> {
     throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`)
   }
   return response.text()
+}
+
+// -- Willingness-to-Pay Scanner --
+
+const WTP_KEYWORDS = [
+  /i'?d pay/i, /would pay/i, /willing to pay/i, /take my money/i,
+  /looking for alternative/i, /need a tool/i, /anyone know a tool/i,
+  /i wish there was/i, /someone should build/i, /shut up and take/i,
+  /pay \$?\d+/i, /worth paying/i, /happy to pay/i,
+]
+
+export function hasWillingnessToPay(text: string): boolean {
+  return WTP_KEYWORDS.some((re) => re.test(text))
+}
+
+// -- Community Post Upsert --
+
+export async function upsertCommunityPost(data: CommunityPostInsert): Promise<CommunityPost | null> {
+  const { data: post, error } = await supabaseAdmin
+    .from("community_posts")
+    .upsert(data, { onConflict: "source,external_id" })
+    .select()
+    .single()
+
+  if (error) throw new Error(`Failed to upsert community post: ${error.message}`)
+  return post as CommunityPost
 }
 
 // -- JSON Fetching --
