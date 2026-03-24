@@ -16,6 +16,7 @@
     "crawl:store_reviews": "tsx scripts/crawlers/crawl-store-reviews.ts",
     "crawl:hn": "tsx scripts/crawlers/crawl-hn.ts",
     "crawl:reddit": "tsx scripts/crawlers/crawl-reddit.ts",
+    "crawl:ih": "tsx scripts/crawlers/crawl-indie-hackers.ts",
     "summarize": "tsx scripts/ai/summarize-app-reviews.ts",
     "analyze": "tsx scripts/ai/analyze.ts"
   },
