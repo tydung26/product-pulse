@@ -13,16 +13,33 @@ const logger = createLogger("analyze")
 
 // -- Data fetching --
 
-async function getAllPainSummaries(): Promise<(AppPainSummary & { app: App })[]> {
+async function getLastAnalyzeTime(): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from("crawl_jobs")
+    .select("completed_at")
+    .eq("job_type", "analyze")
+    .eq("status", "completed")
+    .order("completed_at", { ascending: false })
+    .limit(1)
+  return data?.[0]?.completed_at ?? null
+}
+
+async function getAllPainSummaries(since?: string | null): Promise<(AppPainSummary & { app: App })[]> {
   const PAGE_SIZE = 1000
   const results: (AppPainSummary & { app: App })[] = []
   let offset = 0
 
   while (true) {
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("app_pain_summaries")
       .select("*, app:apps(*)")
-      .range(offset, offset + PAGE_SIZE - 1)
+
+    // Incremental: only fetch summaries updated after last analyze run
+    if (since) {
+      query = query.or(`created_at.gt.${since},updated_at.gt.${since}`)
+    }
+
+    const { data, error } = await query.range(offset, offset + PAGE_SIZE - 1)
 
     if (error) throw new Error(`Failed to fetch pain summaries: ${error.message}`)
     results.push(...(data as (AppPainSummary & { app: App })[]))
@@ -187,29 +204,48 @@ async function analyzeWithRetry(
 
 async function main() {
   const args = process.argv.slice(2)
-  const useApi = args.includes("--api")
-  const providerName = useApi ? "anthropic-sdk" : "claude-cli"
+  const fullRun = args.includes("--full")
+  const forceCli = args.includes("--cli")
 
-  logger.info(`Starting Step 2 analysis with provider: ${providerName}`)
+  // Parse --concurrency flag (default 3 for category analysis)
+  const concIdx = args.indexOf("--concurrency")
+  const CONCURRENCY = concIdx !== -1 ? parseInt(args[concIdx + 1], 10) : 3
 
+  // Provider auto-selection: SDK when API key present, CLI as fallback
   let provider: AIProvider
-  if (useApi) {
+  if (!forceCli && process.env.ANTHROPIC_API_KEY) {
     const { AnthropicSDKProvider } = await import("./providers/anthropic-sdk")
     provider = new AnthropicSDKProvider()
+    logger.info("Using Anthropic SDK provider")
   } else {
     const { ClaudeCLIProvider } = await import("./providers/claude-cli")
     provider = new ClaudeCLIProvider()
+    logger.info("Using Claude CLI provider (fallback)")
   }
 
   const jobId = await startCrawlJob("analyze")
 
   try {
-    const summaries = await getAllPainSummaries()
+    // Incremental: only analyze categories with changed summaries since last run
+    let since: string | null = null
+    if (!fullRun) {
+      since = await getLastAnalyzeTime()
+      if (since) {
+        logger.info(`Incremental mode: only categories changed since ${since}`)
+      }
+    } else {
+      logger.info("Full mode: analyzing all categories")
+    }
+
+    const summaries = await getAllPainSummaries(since)
     const startups = await getAllStartups()
     const comments = await getUnprocessedStartupComments()
 
     if (summaries.length === 0) {
-      logger.info("No app pain summaries found. Run `pnpm summarize` first.")
+      const msg = since
+        ? "No changed pain summaries since last run. Use --full to force."
+        : "No app pain summaries found. Run `pnpm summarize` first."
+      logger.info(msg)
       await completeCrawlJob(jobId, { found: 0, inserted: 0, updated: 0 })
       return
     }
@@ -226,32 +262,46 @@ async function main() {
     }
 
     const categories = [...byCategory.keys()].sort()
-    logger.info(`Analyzing ${categories.length} categories`)
+    logger.info(`Analyzing ${categories.length} categories (concurrency: ${CONCURRENCY})`)
 
     let totalOpps = 0
 
-    for (const category of categories) {
+    // Worker pool for parallel category analysis
+    const queue = [...categories]
+
+    async function analyzeCategory(category: string): Promise<number> {
       const categorySummaries = byCategory.get(category)!
       logger.info(`[${category}] ${categorySummaries.length} apps`)
 
-      try {
-        const input = buildInputFromSummaries(categorySummaries, startups)
-        const results = await analyzeWithRetry(provider, input)
-        logger.info(`[${category}] AI returned ${results.length} opportunities`)
+      const input = buildInputFromSummaries(categorySummaries, startups)
+      const results = await analyzeWithRetry(provider, input)
+      logger.info(`[${category}] AI returned ${results.length} opportunities`)
 
-        for (const result of results) {
-          try {
-            await saveOpportunity(result, input)
-            totalOpps++
-            logger.info(`Saved: "${result.title}" (score: ${result.score}, verdict: ${result.verdict})`)
-          } catch (err: unknown) {
-            logger.warn(`Failed to save "${result.title}": ${(err as Error).message}`)
-          }
+      let saved = 0
+      for (const result of results) {
+        try {
+          await saveOpportunity(result, input)
+          saved++
+          logger.info(`Saved: "${result.title}" (score: ${result.score}, verdict: ${result.verdict})`)
+        } catch (err: unknown) {
+          logger.warn(`Failed to save "${result.title}": ${(err as Error).message}`)
         }
-      } catch (err: unknown) {
-        logger.warn(`[${category}] AI call failed, skipping: ${(err as Error).message}`)
+      }
+      return saved
+    }
+
+    async function worker(): Promise<void> {
+      while (queue.length > 0) {
+        const category = queue.shift()!
+        try {
+          totalOpps += await analyzeCategory(category)
+        } catch (err: unknown) {
+          logger.warn(`[${category}] AI call failed, skipping: ${(err as Error).message}`)
+        }
       }
     }
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()))
 
     if (comments.length > 0) {
       await markCommentsProcessed(comments.map((c) => c.id))
