@@ -20,13 +20,22 @@ export type AppSummaryContext = {
   total_reviews: number
 }
 
+export type CommunitySummaryContext = {
+  index: number
+  id: string
+  source: string
+  topic: string
+  themes: PainTheme[]
+  total_posts: number
+}
+
 export type AnalysisInput = {
   apps: AppContext[]
   startups: StartupContext[]
   reviews: ReviewContext[]
   startupComments: StartupCommentContext[]
-  // Step 2: app pain summaries (replaces raw reviews when present)
   appSummaries?: AppSummaryContext[]
+  communitySummaries?: CommunitySummaryContext[]
 }
 
 export type AppContext = {
@@ -66,6 +75,21 @@ export type StartupCommentContext = {
   author: string | null
 }
 
+export type EvidenceItem = {
+  type: "app_review" | "community_post"
+  sourceIndex: number
+  quote: string
+  relevance: string
+  hasWtp: boolean
+}
+
+export type ScoreBreakdown = {
+  pain: { score: number; reasoning: string }
+  market: { score: number; reasoning: string }
+  competition: { score: number; reasoning: string }
+  wtp_bonus: number
+}
+
 export type OpportunityResult = {
   title: string
   description: string
@@ -80,6 +104,12 @@ export type OpportunityResult = {
   reasoning: string
   appIndices: number[]
   startupIndices: number[]
+  // Evidence chain
+  evidence: EvidenceItem[]
+  scoreBreakdown: ScoreBreakdown | null
+  wtpCount: number
+  sourceDistribution: Record<string, number>
+  // Legacy fields (backward compat)
   reviewIndices: number[]
   commentIndices: number[]
   appComments: Record<number, string>

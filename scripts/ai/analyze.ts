@@ -6,8 +6,9 @@ import {
   completeCrawlJob,
   failCrawlJob,
 } from "../crawlers/lib/crawler-utils"
-import type { AIProvider, AnalysisInput, OpportunityResult, AppSummaryContext, StartupContext } from "./providers/types"
-import type { AppPainSummary, App, Startup, StartupComment } from "@/lib/types/database"
+import { buildCrossCategoryPrompt } from "./prompt"
+import type { AIProvider, AnalysisInput, OpportunityResult, AppSummaryContext, CommunitySummaryContext, StartupContext } from "./providers/types"
+import type { AppPainSummary, App, Startup, CommunityPainSummary } from "@/lib/types/database"
 
 const logger = createLogger("analyze")
 
@@ -34,13 +35,11 @@ async function getAllPainSummaries(since?: string | null): Promise<(AppPainSumma
       .from("app_pain_summaries")
       .select("*, app:apps(*)")
 
-    // Incremental: only fetch summaries updated after last analyze run
     if (since) {
       query = query.or(`created_at.gt.${since},updated_at.gt.${since}`)
     }
 
     const { data, error } = await query.range(offset, offset + PAGE_SIZE - 1)
-
     if (error) throw new Error(`Failed to fetch pain summaries: ${error.message}`)
     results.push(...(data as (AppPainSummary & { app: App })[]))
     if (data.length < PAGE_SIZE) break
@@ -48,6 +47,17 @@ async function getAllPainSummaries(since?: string | null): Promise<(AppPainSumma
   }
 
   return results
+}
+
+async function getAllCommunitySummaries(): Promise<CommunityPainSummary[]> {
+  const { data, error } = await supabaseAdmin
+    .from("community_pain_summaries")
+    .select("*")
+    .order("total_posts", { ascending: false })
+    .limit(50) // Cap to stay within token budget
+
+  if (error) throw new Error(`Failed to fetch community summaries: ${error.message}`)
+  return (data ?? []) as CommunityPainSummary[]
 }
 
 async function getAllStartups(): Promise<Startup[]> {
@@ -61,29 +71,16 @@ async function getAllStartups(): Promise<Startup[]> {
   return (data ?? []) as Startup[]
 }
 
-async function getUnprocessedStartupComments(): Promise<StartupComment[]> {
-  const { data, error } = await supabaseAdmin
-    .from("startup_comments")
-    .select("*")
-    .eq("is_processed", false)
-    .order("created_at", { ascending: true })
-
-  if (error) throw new Error(`Failed to fetch startup comments: ${error.message}`)
-  return (data ?? []) as StartupComment[]
-}
-
-// -- Build analysis input from summaries --
+// -- Build analysis input --
 
 function buildInputFromSummaries(
   summaries: (AppPainSummary & { app: App })[],
   startups: Startup[],
+  communitySummaries: CommunityPainSummary[],
 ): AnalysisInput {
-  const startupIdToIndex = new Map<string, number>()
-
-  const startupContexts: StartupContext[] = startups.map((s, i) => {
-    startupIdToIndex.set(s.id, i)
-    return { index: i, id: s.id, name: s.name, tagline: s.tagline, upvotes: s.upvotes, source: s.source }
-  })
+  const startupContexts: StartupContext[] = startups.map((s, i) => ({
+    index: i, id: s.id, name: s.name, tagline: s.tagline, upvotes: s.upvotes, source: s.source,
+  }))
 
   const appSummaries: AppSummaryContext[] = summaries.map((s, i) => ({
     index: i,
@@ -98,6 +95,15 @@ function buildInputFromSummaries(
     total_reviews: s.total_reviews,
   }))
 
+  const communityContexts: CommunitySummaryContext[] = communitySummaries.map((c, i) => ({
+    index: i,
+    id: c.id,
+    source: c.source,
+    topic: c.topic,
+    themes: c.themes,
+    total_posts: c.total_posts,
+  }))
+
   return {
     apps: appSummaries.map((a) => ({
       index: a.index, id: a.id, name: a.name, category: a.category,
@@ -107,13 +113,14 @@ function buildInputFromSummaries(
     reviews: [],
     startupComments: [],
     appSummaries,
+    communitySummaries: communityContexts,
   }
 }
 
 // -- Save results to DB --
 
 async function saveOpportunity(result: OpportunityResult, input: AnalysisInput): Promise<void> {
-  // Dedup check: skip if opportunity with same title + category already exists
+  // Dedup check
   const { data: existing } = await supabaseAdmin
     .from("opportunities")
     .select("id")
@@ -140,6 +147,10 @@ async function saveOpportunity(result: OpportunityResult, input: AnalysisInput):
       pain_summary: result.painSummary,
       solution_angles: result.solutionAngles,
       ai_reasoning: { reasoning: result.reasoning },
+      evidence_summary: { evidence: result.evidence },
+      wtp_count: result.wtpCount,
+      source_count: result.sourceDistribution,
+      score_breakdown: result.scoreBreakdown ?? {},
     })
     .select("id")
     .single()
@@ -147,6 +158,7 @@ async function saveOpportunity(result: OpportunityResult, input: AnalysisInput):
   if (error) throw new Error(`Failed to insert opportunity: ${error.message}`)
   const oppId = opp.id
 
+  // Link to apps
   for (const appIdx of result.appIndices) {
     const app = input.apps[appIdx]
     if (!app) continue
@@ -157,6 +169,7 @@ async function saveOpportunity(result: OpportunityResult, input: AnalysisInput):
     })
   }
 
+  // Link to startups
   for (const startupIdx of result.startupIndices) {
     const startup = input.startups[startupIdx]
     if (!startup) continue
@@ -168,16 +181,24 @@ async function saveOpportunity(result: OpportunityResult, input: AnalysisInput):
       role: sc?.role ?? "related",
     })
   }
-}
 
-async function markCommentsProcessed(commentIds: string[]): Promise<void> {
-  if (commentIds.length === 0) return
-  const { error } = await supabaseAdmin
-    .from("startup_comments")
-    .update({ is_processed: true })
-    .in("id", commentIds)
-
-  if (error) logger.warn(`Failed to mark comments processed: ${error.message}`)
+  // Save evidence to junction tables
+  for (const ev of result.evidence) {
+    if (ev.type === "community_post") {
+      const cs = input.communitySummaries?.[ev.sourceIndex]
+      if (!cs) continue
+      // Link opportunity to the community summary's source post via ID
+      await supabaseAdmin.from("opportunity_community_posts").insert({
+        opportunity_id: oppId,
+        community_post_id: cs.id,
+        quote: ev.quote,
+        relevance: ev.relevance,
+      }).then(({ error: e }) => {
+        if (e) logger.warn(`Failed to link community evidence: ${e.message}`)
+      })
+    }
+    // app_review evidence is captured via opportunity_apps + appComments
+  }
 }
 
 // -- Retry wrapper --
@@ -206,12 +227,12 @@ async function main() {
   const args = process.argv.slice(2)
   const fullRun = args.includes("--full")
   const forceCli = args.includes("--cli")
+  const crossCategory = args.includes("--cross-category")
 
-  // Parse --concurrency flag (default 3 for category analysis)
   const concIdx = args.indexOf("--concurrency")
   const CONCURRENCY = concIdx !== -1 ? parseInt(args[concIdx + 1], 10) : 3
 
-  // Provider auto-selection: SDK when API key present, CLI as fallback
+  // Provider auto-selection
   let provider: AIProvider
   if (!forceCli && process.env.ANTHROPIC_API_KEY) {
     const { AnthropicSDKProvider } = await import("./providers/anthropic-sdk")
@@ -226,33 +247,31 @@ async function main() {
   const jobId = await startCrawlJob("analyze")
 
   try {
-    // Incremental: only analyze categories with changed summaries since last run
+    // Incremental mode
     let since: string | null = null
     if (!fullRun) {
       since = await getLastAnalyzeTime()
-      if (since) {
-        logger.info(`Incremental mode: only categories changed since ${since}`)
-      }
+      if (since) logger.info(`Incremental mode: since ${since}`)
     } else {
       logger.info("Full mode: analyzing all categories")
     }
 
     const summaries = await getAllPainSummaries(since)
+    const communitySummaries = await getAllCommunitySummaries()
     const startups = await getAllStartups()
-    const comments = await getUnprocessedStartupComments()
 
-    if (summaries.length === 0) {
+    if (summaries.length === 0 && communitySummaries.length === 0) {
       const msg = since
-        ? "No changed pain summaries since last run. Use --full to force."
-        : "No app pain summaries found. Run `pnpm summarize` first."
+        ? "No changed summaries since last run. Use --full to force."
+        : "No pain summaries found. Run summarize scripts first."
       logger.info(msg)
       await completeCrawlJob(jobId, { found: 0, inserted: 0, updated: 0 })
       return
     }
 
-    logger.info(`Data: ${summaries.length} app summaries, ${startups.length} startups, ${comments.length} comments`)
+    logger.info(`Data: ${summaries.length} app summaries, ${communitySummaries.length} community summaries, ${startups.length} startups`)
 
-    // Group summaries by category
+    // Group app summaries by category
     const byCategory = new Map<string, (AppPainSummary & { app: App })[]>()
     for (const s of summaries) {
       const cat = s.app.category ?? "Uncategorized"
@@ -265,6 +284,7 @@ async function main() {
     logger.info(`Analyzing ${categories.length} categories (concurrency: ${CONCURRENCY})`)
 
     let totalOpps = 0
+    const categoryResults: { category: string; opportunities: string[] }[] = []
 
     // Worker pool for parallel category analysis
     const queue = [...categories]
@@ -273,16 +293,22 @@ async function main() {
       const categorySummaries = byCategory.get(category)!
       logger.info(`[${category}] ${categorySummaries.length} apps`)
 
-      const input = buildInputFromSummaries(categorySummaries, startups)
+      const input = buildInputFromSummaries(categorySummaries, startups, communitySummaries)
       const results = await analyzeWithRetry(provider, input)
       logger.info(`[${category}] AI returned ${results.length} opportunities`)
+
+      // Collect for cross-category pass
+      categoryResults.push({
+        category,
+        opportunities: results.map((r) => `${r.title} (score: ${r.score}, WTP: ${r.wtpCount})`),
+      })
 
       let saved = 0
       for (const result of results) {
         try {
           await saveOpportunity(result, input)
           saved++
-          logger.info(`Saved: "${result.title}" (score: ${result.score}, verdict: ${result.verdict})`)
+          logger.info(`Saved: "${result.title}" (score: ${result.score}, verdict: ${result.verdict}, evidence: ${result.evidence.length}, WTP: ${result.wtpCount})`)
         } catch (err: unknown) {
           logger.warn(`Failed to save "${result.title}": ${(err as Error).message}`)
         }
@@ -303,11 +329,39 @@ async function main() {
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()))
 
-    if (comments.length > 0) {
-      await markCommentsProcessed(comments.map((c) => c.id))
+    // Cross-category final pass
+    if (crossCategory && categoryResults.length >= 2) {
+      logger.info("Running cross-category analysis...")
+      try {
+        const crossInput: AnalysisInput = {
+          apps: [], startups: [], reviews: [], startupComments: [],
+          appSummaries: [], communitySummaries: [],
+        }
+        // Use cross-category prompt via a temporary provider call
+        const crossPrompt = buildCrossCategoryPrompt(categoryResults)
+        // Feed the prompt through the provider's analyze method by constructing a minimal input
+        // The cross-category prompt is self-contained, so we pass it as appSummaries context
+        const crossResults = await analyzeWithRetry(provider, {
+          ...crossInput,
+          appSummaries: [{ index: 0, id: "", name: crossPrompt, category: "Cross-Category", mrr: null, downloads: null, rating: null, store: "", themes: [], total_reviews: 0 }],
+        })
+
+        for (const result of crossResults) {
+          try {
+            result.category = "Cross-Category"
+            await saveOpportunity(result, crossInput)
+            totalOpps++
+            logger.info(`Cross-category: "${result.title}" (score: ${result.score})`)
+          } catch (err: unknown) {
+            logger.warn(`Failed to save cross-category "${result.title}": ${(err as Error).message}`)
+          }
+        }
+      } catch (err: unknown) {
+        logger.warn(`Cross-category analysis failed: ${(err as Error).message}`)
+      }
     }
 
-    await completeCrawlJob(jobId, { found: summaries.length, inserted: totalOpps, updated: 0 })
+    await completeCrawlJob(jobId, { found: summaries.length + communitySummaries.length, inserted: totalOpps, updated: 0 })
     logger.info(`Done. Categories: ${categories.length}, Opportunities: ${totalOpps}`)
   } catch (err: unknown) {
     await failCrawlJob(jobId, (err as Error).message)
