@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { verdictColor } from "@/lib/constants"
@@ -24,7 +25,8 @@ type Props = {
 
 export function OpportunityCard({ opportunity: opp }: Props) {
   return (
-    <Card>
+    <Link href={`/opportunities/${opp.id}`} className="block">
+    <Card className="transition-colors hover:bg-muted/50">
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -78,5 +80,6 @@ export function OpportunityCard({ opportunity: opp }: Props) {
         </div>
       </CardContent>
     </Card>
+    </Link>
   )
 }
