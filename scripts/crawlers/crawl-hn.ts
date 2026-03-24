@@ -45,7 +45,20 @@ const SEARCH_QUERIES = [
   "need a better",
   "would pay for",
   "someone should build",
+  "pain point",
+  "biggest challenge",
+  "hate using",
+  "switching from",
+  "bad experience with",
+  "recommend a tool",
+  "what do you use for",
+  "any alternative to",
+  "too expensive",
+  "overpriced",
+  "missing feature",
 ]
+
+const MAX_PAGES_PER_QUERY = 5 // 5 pages × 50 = 250 results per query
 
 const HN_ALGOLIA_BASE = "https://hn.algolia.com/api/v1"
 
@@ -119,18 +132,21 @@ async function main() {
     for (const query of SEARCH_QUERIES) {
       for (const tags of ["ask_hn", "story"]) {
         try {
-          const hits = await searchHN(query, tags)
-          for (const hit of hits) {
-            if (seen.has(hit.objectID)) continue
-            seen.add(hit.objectID)
-            const post = hitToPost(hit)
-            if (post) posts.push(post)
+          for (let page = 0; page < MAX_PAGES_PER_QUERY; page++) {
+            const hits = await searchHN(query, tags, page)
+            if (hits.length === 0) break
+            for (const hit of hits) {
+              if (seen.has(hit.objectID)) continue
+              seen.add(hit.objectID)
+              const post = hitToPost(hit)
+              if (post) posts.push(post)
+            }
+            if (page === 0) logger.info(`Search "${query}" [${tags}]: ${hits.length} hits (paginating...)`)
+            await delay()
           }
-          logger.info(`Search "${query}" [${tags}]: ${hits.length} hits`)
         } catch (err: unknown) {
           logger.warn(`Search "${query}" [${tags}] failed: ${(err as Error).message}`)
         }
-        await delay()
       }
     }
 

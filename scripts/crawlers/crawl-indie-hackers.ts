@@ -28,7 +28,19 @@ const SEARCH_QUERIES = [
   "someone should build",
   "pain point",
   "biggest challenge",
+  "hate using",
+  "switching from",
+  "recommend a tool",
+  "what tool do you use",
+  "too expensive",
+  "missing feature",
+  "bad experience",
+  "struggle with",
+  "any alternative",
+  "overpriced",
 ]
+
+const MAX_PAGES_PER_QUERY = 5
 
 // -- Algolia response types --
 
@@ -108,8 +120,7 @@ async function main() {
 
     for (const query of SEARCH_QUERIES) {
       try {
-        // Fetch first 2 pages per query (100 results max)
-        for (let page = 0; page < 2; page++) {
+        for (let page = 0; page < MAX_PAGES_PER_QUERY; page++) {
           const hits = await searchIH(query, page)
           if (hits.length === 0) break
 
