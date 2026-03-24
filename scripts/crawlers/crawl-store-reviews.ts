@@ -11,6 +11,7 @@ import {
   getActiveApps,
   fetchJson,
 } from "./lib/crawler-utils"
+import { supabaseAdmin } from "./lib/supabase-admin"
 import type { App, StoreReviewInsert } from "@/lib/types/database"
 
 const logger = createLogger("store-reviews")
@@ -147,6 +148,14 @@ async function main() {
         } catch (err: unknown) {
           // Skip individual review failures silently
         }
+      }
+
+      // Invalidate pain summary when new reviews inserted (forces re-summarization)
+      if (inserted > 0) {
+        await supabaseAdmin
+          .from("app_pain_summaries")
+          .delete()
+          .eq("app_id", app.id)
       }
 
       await updateAppLastCrawled(app.id)

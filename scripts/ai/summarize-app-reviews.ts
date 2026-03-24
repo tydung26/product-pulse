@@ -15,11 +15,11 @@ const PAGE_SIZE = 1000
 
 // -- Data fetching --
 
-async function getAppsWithUnprocessedReviews(): Promise<App[]> {
-  // Get distinct app_ids that have unprocessed reviews, then fetch app records
+async function getAppsNeedingSummarization(): Promise<App[]> {
   const appIds = new Set<string>()
-  let offset = 0
 
+  // 1. Apps with unprocessed reviews
+  let offset = 0
   while (true) {
     const { data, error } = await supabaseAdmin
       .from("store_reviews")
@@ -31,6 +31,28 @@ async function getAppsWithUnprocessedReviews(): Promise<App[]> {
     for (const row of data) appIds.add(row.app_id)
     if (data.length < PAGE_SIZE) break
     offset += PAGE_SIZE
+  }
+
+  // 2. Apps with reviews but no pain summary (invalidated or never summarized)
+  const { data: appsWithReviews, error: rwErr } = await supabaseAdmin
+    .from("store_reviews")
+    .select("app_id")
+
+  if (rwErr) throw new Error(`Failed to fetch review app IDs: ${rwErr.message}`)
+
+  const allReviewAppIds = new Set(appsWithReviews.map((r) => r.app_id))
+
+  const { data: summaries, error: sumErr } = await supabaseAdmin
+    .from("app_pain_summaries")
+    .select("app_id")
+
+  if (sumErr) throw new Error(`Failed to fetch summaries: ${sumErr.message}`)
+
+  const summarizedAppIds = new Set(summaries.map((s) => s.app_id))
+
+  // Apps that have reviews but no summary → need summarization
+  for (const id of allReviewAppIds) {
+    if (!summarizedAppIds.has(id)) appIds.add(id)
   }
 
   if (appIds.size === 0) return []
@@ -59,6 +81,7 @@ async function getReviewsForApp(appId: string): Promise<StoreReview[]> {
     .select("*")
     .eq("app_id", appId)
     .eq("is_processed", false)
+    .order("rating", { ascending: true })
     .order("created_at", { ascending: false })
     .limit(MAX_REVIEWS_PER_APP)
 
@@ -179,7 +202,7 @@ async function main() {
   const jobId = await startCrawlJob("analyze")
 
   try {
-    let apps = await getAppsWithUnprocessedReviews()
+    let apps = await getAppsNeedingSummarization()
     if (storeFilter) {
       apps = apps.filter((a) => a.store === storeFilter)
     }
