@@ -177,8 +177,8 @@ async function main() {
   const jobId = await startCrawlJob("analyze")
 
   try {
-    const appSummaries = await getTopAppSummaries(30)
-    const communitySummaries = await getTopCommunitySummaries(30)
+    const appSummaries = await getTopAppSummaries(15)
+    const communitySummaries = await getTopCommunitySummaries(15)
 
     if (appSummaries.length === 0 && communitySummaries.length === 0) {
       logger.info("No pain summaries found. Run summarize scripts first.")
