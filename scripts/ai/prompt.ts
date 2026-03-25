@@ -1,77 +1,58 @@
-import type { AnalysisInput, AppSummaryContext, CommunitySummaryContext } from "./providers/types"
+import type { AppSummaryContext, CommunitySummaryContext } from "./providers/types"
 
 // -- Step 1 prompt is co-located in summarize-app-reviews.ts --
 
-// -- Build sections for the analysis prompt --
+// -- Compact section builders for ranking prompt --
 
-function buildAppSummarySection(summaries: AppSummaryContext[]): string {
+function buildCompactAppSection(summaries: AppSummaryContext[]): string {
   return summaries
     .map((a) => {
-      const themes = a.themes
-        .map(
-          (t) =>
-            `    - "${t.theme}" (severity: ${t.severity}, ${t.review_count} reviews) — quotes: ${t.example_quotes.slice(0, 2).map((q) => `"${q}"`).join(", ")}`
-        )
-        .join("\n")
-      return `[App #${a.index}] ${a.name} (${a.store}, ${a.category ?? "unknown"}) — rating: ${a.rating ?? "N/A"}, downloads: ${a.downloads ?? "N/A"}, MRR: $${a.mrr ?? "N/A"}, reviews analyzed: ${a.total_reviews}\n  Pain themes:\n${themes || "    (none)"}`
+      const topThemes = a.themes
+        .slice(0, 3)
+        .map((t) => `${t.theme} (sev:${t.severity}, ${t.review_count} reviews)`)
+        .join("; ")
+      return `[App #${a.index}] ${a.name} (${a.category ?? "?"}, ${a.store}) — rating:${a.rating ?? "?"}, downloads:${a.downloads ?? "?"}, MRR:$${a.mrr ?? "?"} | ${topThemes}`
     })
-    .join("\n\n")
-}
-
-function buildCommunitySummarySection(summaries: CommunitySummaryContext[]): string {
-  if (!summaries || summaries.length === 0) return ""
-  return summaries
-    .map((c) => {
-      const themes = c.themes
-        .map(
-          (t) =>
-            `    - "${t.theme}" (severity: ${t.severity}, ${t.review_count} posts) — quotes: ${t.example_quotes.slice(0, 2).map((q) => `"${q}"`).join(", ")}`
-        )
-        .join("\n")
-      return `[Community #${c.index}] (${c.source}) "${c.topic}" — ${c.total_posts} posts\n  Themes:\n${themes || "    (none)"}`
-    })
-    .join("\n\n")
-}
-
-function buildStartupSection(input: AnalysisInput): string {
-  return input.startups
-    .map(
-      (s) =>
-        `[Startup #${s.index}] ${s.name} (${s.source}) — "${s.tagline ?? ""}", upvotes: ${s.upvotes}`
-    )
     .join("\n")
 }
 
-// -- Main prompt builder --
+function buildCompactCommunitySection(summaries: CommunitySummaryContext[]): string {
+  if (!summaries || summaries.length === 0) return ""
+  return summaries
+    .map((c) => {
+      const topThemes = c.themes
+        .slice(0, 2)
+        .map((t) => `${t.theme} (sev:${t.severity})`)
+        .join("; ")
+      return `[Community #${c.index}] (${c.source}) "${c.topic}" — ${c.total_posts} posts | ${topThemes}`
+    })
+    .join("\n")
+}
 
-export function buildPrompt(input: AnalysisInput): string {
-  const summaries = input.appSummaries ?? []
-  const community = input.communitySummaries ?? []
-  const appSection = buildAppSummarySection(summaries)
-  const communitySection = buildCommunitySummarySection(community)
-  const startupSection = buildStartupSection(input)
+// -- Stage 1: Ranking prompt (single call, compact) --
 
-  return `You are a brutally honest product analyst and devil's advocate. Given aggregated pain themes from app reviews, community discussions, and startup context, identify viable product opportunities. For EVERY opportunity, you MUST also provide honest critique — reasons it might fail, false signals, and open questions the builder should validate before committing.
+export function buildRankingPrompt(
+  appSummaries: AppSummaryContext[],
+  communitySummaries: CommunitySummaryContext[],
+): string {
+  const appSection = buildCompactAppSection(appSummaries)
+  const communitySection = buildCompactCommunitySection(communitySummaries)
 
-## INPUT DATA
+  return `You are a brutally honest product analyst. Given aggregated pain data from app store reviews and community discussions (HN, Indie Hackers), identify the TOP 10 product opportunities worth building.
 
-### App Pain Summaries (aggregated from 1-3 star reviews)
-${appSection || "No app summaries provided."}
+## APP PAIN DATA (from 1-3 star reviews)
+${appSection || "None."}
 
-${communitySection ? `### Community Pain Summaries (from Reddit, HN, Indie Hackers)\n${communitySection}` : ""}
-
-### Startups (potential competitors/inspiration)
-${startupSection || "No startups provided."}
+## COMMUNITY PAIN DATA (from HN + Indie Hackers discussions)
+${communitySection || "None."}
 
 ## TASK
 
-Analyze the pain themes across apps and community to identify product opportunities. For each opportunity you MUST:
-1. Provide a structured evidence array citing specific sources with direct quotes
-2. Score each dimension with reasoning explaining why
-3. Flag evidence items that contain willingness-to-pay (WTP) signals
-4. Link to specific apps and startups by their index numbers
-5. Play DEVIL'S ADVOCATE: list 2-4 reasons this opportunity might NOT work (market too small? complaints are just bugs that'll be fixed? users won't pay? competition moat too strong?)
-6. List 1-3 OPEN QUESTIONS that can't be answered from this data and need real-world validation
+Cross-reference app pain with community pain. Identify the 10 best product opportunities — things someone could actually build and sell. For each:
+1. Score pain (0-100), market (0-100), competition (0-100)
+2. List which app indices and community indices support it
+3. Give a brief critique: 1-2 reasons it might NOT work
+4. Note if there are willingness-to-pay signals
 
 ## OUTPUT FORMAT
 
@@ -79,94 +60,108 @@ Return a JSON array (no markdown fences, just raw JSON):
 [
   {
     "title": "Brief opportunity title",
-    "description": "2-3 sentence description of the opportunity",
+    "description": "2-3 sentences. What to build and for whom.",
     "category": "Category name",
     "painSeverity": 85,
     "marketSize": 70,
     "competition": 40,
     "verdict": "strong",
-    "painSummary": ["Top cross-source complaint 1", "Top complaint 2"],
-    "solutionAngles": ["Solution idea 1", "Solution idea 2"],
-    "reasoning": "Why this is a viable opportunity...",
-    "appIndices": [0, 2],
-    "startupIndices": [1],
-    "evidence": [
-      { "type": "app_review", "sourceIndex": 0, "quote": "47 reviews mention login failures", "relevance": "Confirms authentication is a real pain", "hasWtp": false },
-      { "type": "community_post", "sourceIndex": 2, "quote": "I'd pay $50/mo for proper invoicing", "relevance": "Direct WTP signal from target user", "hasWtp": true }
-    ],
-    "scoreBreakdown": {
-      "pain": { "score": 85, "reasoning": "12 app reviews + 8 community posts confirm widespread issue" },
-      "market": { "score": 70, "reasoning": "Combined 500K downloads across affected apps" },
-      "competition": { "score": 40, "reasoning": "2 startups attempting but both have poor reviews" },
-      "wtp_bonus": 4
-    },
-    "critique": [
-      "Most complaints are about bugs that the vendor will likely fix in next release",
-      "No evidence users would switch — high switching cost in this category",
-      "Market may be too small for sustainable SaaS revenue"
-    ],
-    "openQuestions": [
-      "Are users willing to pay $X/mo for a standalone solution or do they expect this built into existing tools?",
-      "Is this pain concentrated in a specific geography or global?"
-    ],
-    "appComments": {"0": "47 reviews mention login failures", "2": "Low rating despite high downloads"},
-    "startupComments": {"1": {"comment": "Attempting similar solution", "role": "competitor"}}
+    "painSummary": ["Key pain 1", "Key pain 2"],
+    "solutionAngles": ["Build X that does Y", "Alternative: Z approach"],
+    "reasoning": "Why this is viable...",
+    "appIndices": [0, 5],
+    "startupIndices": [],
+    "communityIndices": [2, 7],
+    "critique": ["Might not work because...", "Risk: ..."],
+    "openQuestions": ["Need to validate: ..."],
+    "hasWtpSignals": true
   }
 ]
 
-Scoring formula: pain*0.4 + market*0.35 + (100-competition)*0.25 + wtp_bonus
-WTP bonus: min(10, number_of_wtp_evidence_items * 2)
-Verdicts: "strong" (score>=70), "moderate" (40-69), "weak" (<40)
-
-Return 1-5 opportunities, ranked by score descending. Only include opportunities with score >= 30.
-Each evidence item MUST include a direct quote from the source data.`
+Score: pain*0.4 + market*0.35 + (100-competition)*0.25. Verdicts: strong(>=70), moderate(40-69), weak(<40).
+Return exactly 10 opportunities ranked by score descending. Be brutally honest in critiques.`
 }
 
-// -- Cross-category prompt --
+// -- Stage 2: Deep dive prompt (per-opportunity, focused) --
 
-export function buildCrossCategoryPrompt(categoryResults: { category: string; opportunities: string[] }[]): string {
-  const summary = categoryResults
-    .map((cr) => {
-      const opps = cr.opportunities.map((o, i) => `  ${i + 1}. ${o}`).join("\n")
-      return `[${cr.category}]\n${opps}`
+export function buildDeepDivePrompt(
+  opportunity: { title: string; description: string; category: string },
+  relatedAppSummaries: AppSummaryContext[],
+  relatedCommunitySummaries: CommunitySummaryContext[],
+): string {
+  // Full detail for deep dive — include quotes
+  const appSection = relatedAppSummaries
+    .map((a) => {
+      const themes = a.themes
+        .map((t) =>
+          `    - "${t.theme}" (severity: ${t.severity}, ${t.review_count} reviews) — quotes: ${t.example_quotes.slice(0, 3).map((q) => `"${q}"`).join(", ")}`
+        )
+        .join("\n")
+      return `[App #${a.index}] ${a.name} (${a.store}, ${a.category ?? "?"}) — rating:${a.rating ?? "?"}, downloads:${a.downloads ?? "?"}\n${themes}`
     })
     .join("\n\n")
 
-  return `You are a product analyst. Given opportunities identified across multiple app categories, identify 1-3 PLATFORM-LEVEL opportunities that span multiple categories.
+  const communitySection = relatedCommunitySummaries
+    .map((c) => {
+      const themes = c.themes
+        .map((t) =>
+          `    - "${t.theme}" (severity: ${t.severity}, ${t.review_count} posts) — quotes: ${t.example_quotes.slice(0, 3).map((q) => `"${q}"`).join(", ")}`
+        )
+        .join("\n")
+      return `[Community #${c.index}] (${c.source}) "${c.topic}" — ${c.total_posts} posts\n${themes}`
+    })
+    .join("\n\n")
 
-## PER-CATEGORY OPPORTUNITIES
-${summary}
+  return `You are a brutally honest product analyst doing a deep-dive analysis on a specific product opportunity.
+
+## OPPORTUNITY
+Title: ${opportunity.title}
+Description: ${opportunity.description}
+Category: ${opportunity.category}
+
+## RELATED APP PAIN DATA (with quotes from 1-3 star reviews)
+${appSection || "None."}
+
+## RELATED COMMUNITY PAIN DATA (with quotes from HN/IH discussions)
+${communitySection || "None."}
 
 ## TASK
-Find cross-cutting patterns — pain points that appear in 3+ categories. These represent horizontal platform opportunities (e.g., "offline support" pain across Finance + Productivity + Health).
+
+Provide a comprehensive analysis of this opportunity:
+1. **Evidence**: Cite specific quotes from the data above that prove this pain is real
+2. **Score breakdown**: Score each dimension (pain, market, competition) with detailed reasoning
+3. **Critique**: 3-5 reasons this opportunity might FAIL. Be brutal — I need to know the risks before I commit months of work.
+4. **Open questions**: 2-4 things I need to validate in the real world before building (talk to users, check pricing, etc.)
+5. **Solution angles**: 2-3 concrete approaches to building this
 
 ## OUTPUT FORMAT
-Return a JSON array (no markdown fences):
-[
-  {
-    "title": "Platform opportunity title",
-    "description": "2-3 sentences about the cross-cutting opportunity",
-    "category": "Cross-Category",
-    "painSeverity": 80,
-    "marketSize": 75,
-    "competition": 30,
-    "verdict": "strong",
-    "painSummary": ["Pain seen in Finance, Productivity, and Health apps"],
-    "solutionAngles": ["Horizontal tool that solves X across verticals"],
-    "reasoning": "This pain appears in N categories because...",
-    "appIndices": [],
-    "startupIndices": [],
-    "evidence": [],
-    "scoreBreakdown": {
-      "pain": { "score": 80, "reasoning": "..." },
-      "market": { "score": 75, "reasoning": "..." },
-      "competition": { "score": 30, "reasoning": "..." },
-      "wtp_bonus": 0
-    },
-    "appComments": {},
-    "startupComments": {}
-  }
-]
 
-Return 1-3 cross-category opportunities only. Skip if no meaningful cross-cutting patterns exist.`
+Return raw JSON (no markdown fences):
+{
+  "evidence": [
+    { "type": "app_review", "sourceIndex": 0, "quote": "exact quote from data", "relevance": "why this matters", "hasWtp": false },
+    { "type": "community_post", "sourceIndex": 2, "quote": "exact quote", "relevance": "why", "hasWtp": true }
+  ],
+  "scoreBreakdown": {
+    "pain": { "score": 85, "reasoning": "Detailed reasoning..." },
+    "market": { "score": 70, "reasoning": "Detailed reasoning..." },
+    "competition": { "score": 40, "reasoning": "Detailed reasoning..." },
+    "wtp_bonus": 4
+  },
+  "critique": [
+    "Detailed reason this might fail 1...",
+    "Detailed reason 2...",
+    "Detailed reason 3..."
+  ],
+  "openQuestions": [
+    "Question to validate before building 1...",
+    "Question 2..."
+  ],
+  "solutionAngles": [
+    "Concrete approach 1: build X that...",
+    "Approach 2: instead of X, try Y..."
+  ]
+}
+
+Be specific with quotes. Be brutal with critique. This analysis determines whether I spend months building this.`
 }

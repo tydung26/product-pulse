@@ -19,7 +19,8 @@
     "crawl:ih": "tsx scripts/crawlers/crawl-indie-hackers.ts",
     "summarize": "tsx scripts/ai/summarize-app-reviews.ts",
     "summarize:community": "tsx scripts/ai/summarize-community-posts.ts",
-    "analyze": "tsx scripts/ai/analyze.ts"
+    "analyze": "tsx scripts/ai/analyze.ts",
+    "analyze:deep": "tsx scripts/ai/analyze-deep.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
